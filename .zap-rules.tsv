@@ -1,0 +1,25 @@
+# .zap-rules.tsv
+# Format: rule_id  IGNORE/WARN/FAIL  reason
+# ZAP will use this to filter and classify its findings
+
+# ── Ignore low-signal rules for a demo app ────────────────────────────────────
+
+# Web Browser XSS protection header - we set X-XSS-Protection in headers
+10016	IGNORE	X-XSS-Protection set in security headers middleware
+
+# Cookie without Secure flag - fine on HTTP in local staging
+10011	IGNORE	HTTP-only staging environment
+
+# Missing Anti-clickjacking header - we set X-Frame-Options: DENY
+10020	IGNORE	X-Frame-Options: DENY set in security headers middleware
+
+# ── Escalate these to FAIL (higher than ZAP default) ─────────────────────────
+
+# SQL injection - always fail
+40018	FAIL	SQL injection must always block deployment
+
+# Remote OS Command Injection
+40014	FAIL	Command injection must always block deployment
+
+# Path traversal
+6	FAIL	Path traversal must always block deployment

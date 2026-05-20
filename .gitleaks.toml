@@ -1,0 +1,34 @@
+# .gitleaks.toml — custom secret detection rules on top of Gitleaks defaults
+title = "DevSecOps Pipeline — Gitleaks Config"
+
+[extend]
+# Use the default ruleset as the base
+useDefault = true
+
+# ── Custom rules for patterns not in the default set ──────────────────────────
+[[rules]]
+id          = "render-api-key"
+description = "Render.com API key"
+regex       = '''rnd_[A-Za-z0-9]{32,}'''
+tags        = ["render", "api-key"]
+
+[[rules]]
+id          = "railway-token"
+description = "Railway deployment token"
+regex       = '''railway_[A-Za-z0-9]{32,}'''
+tags        = ["railway", "token"]
+
+[[rules]]
+id          = "flask-secret-hardcoded"
+description = "Hardcoded Flask SECRET_KEY"
+regex       = '''SECRET_KEY\s*=\s*["\'][^"\']{8,}["\']'''
+tags        = ["flask", "secret"]
+
+# ── Paths to always ignore ─────────────────────────────────────────────────────
+[allowlist]
+paths = [
+  ".gitleaks.toml",
+  "reports/",
+  "*.md",
+  "tests/fixtures/",
+]

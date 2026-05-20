@@ -1,0 +1,406 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+#  DevSecOps Pipeline — Security-First CI/CD
+#  Tools: TruffleHog · Semgrep · OWASP Dependency-Check · Trivy · OWASP ZAP
+#  Cost: $0 — every tool is free/open-source
+# ═══════════════════════════════════════════════════════════════════════════════
+
+name: DevSecOps Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Run full scan every night at 2 AM UTC (catches newly published CVEs)
+    - cron: "0 2 * * *"
+
+# Cancel in-progress runs on the same branch when a new push arrives
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  IMAGE_NAME: devsecops-demo-app
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  STAGE 1 — SECRET SCANNING (TruffleHog)
+#  Fails instantly if any secret is found anywhere in git history
+# ═══════════════════════════════════════════════════════════════════════════════
+jobs:
+  secret-scan:
+    name: "🔐 Stage 1 — Secret Scanning (TruffleHog)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history for TruffleHog)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0      # CRITICAL: scan full git history, not just latest commit
+
+      - name: Run TruffleHog
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: >
+            --only-verified
+            --fail
+            --json
+            --config .gitleaks.toml
+
+      - name: Upload TruffleHog results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trufflehog-results
+          path: trufflehog-output.json
+          if-no-files-found: ignore
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  STAGE 2 — SAST (Semgrep)
+#  Scans source code for security vulnerabilities without running the app
+# ═══════════════════════════════════════════════════════════════════════════════
+  sast-semgrep:
+    name: "🔍 Stage 2 — SAST (Semgrep OSS)"
+    runs-on: ubuntu-latest
+    needs: secret-scan        # only run if secrets stage passed
+    permissions:
+      security-events: write  # needed to upload SARIF to GitHub Security tab
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >
+            p/python
+            p/flask
+            p/owasp-top-ten
+            p/sql-injection
+            p/xss
+            .semgrep.yml
+          generateSarif: "1"
+        env:
+          SEMGREP_TIMEOUT: 300
+
+      - name: Upload SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+      - name: Upload Semgrep results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-sarif
+          path: semgrep.sarif
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  STAGE 3 — DEPENDENCY SCANNING (OWASP Dependency-Check + pip-audit)
+#  Checks every Python package against the NVD vulnerability database
+# ═══════════════════════════════════════════════════════════════════════════════
+  dependency-scan:
+    name: "📦 Stage 3 — Dependency Scanning"
+    runs-on: ubuntu-latest
+    needs: secret-scan
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r app/requirements.txt
+
+      # pip-audit: fast built-in CVE scanner (free, no account)
+      - name: pip-audit — Python dependency CVE scan
+        run: |
+          pip install pip-audit
+          pip-audit \
+            --requirement app/requirements.txt \
+            --format json \
+            --output pip-audit-results.json \
+            --strict \
+            || (echo "::error::pip-audit found vulnerabilities" && cat pip-audit-results.json && exit 1)
+
+      # OWASP Dependency-Check: deeper NVD scan (free, open-source)
+      - name: OWASP Dependency-Check
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: "devsecops-demo"
+          path: "."
+          format: "HTML,JSON,SARIF"
+          out: "reports/dependency-check"
+          args: >
+            --enableRetired
+            --failOnCVSS 7
+            --suppression dependency-check-suppressions.xml
+
+      - name: Upload Dependency-Check report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-report
+          path: reports/dependency-check/
+
+      - name: Upload pip-audit results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pip-audit-results
+          path: pip-audit-results.json
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  STAGE 4 — UNIT + SECURITY TESTS (pytest)
+# ═══════════════════════════════════════════════════════════════════════════════
+  unit-tests:
+    name: "🧪 Stage 4 — Unit & Security Tests (pytest)"
+    runs-on: ubuntu-latest
+    needs: [sast-semgrep, dependency-scan]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install app + test deps
+        run: |
+          pip install -r app/requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run tests with coverage
+        run: |
+          cd app
+          pytest ../tests/ \
+            --cov=app \
+            --cov-report=xml:../reports/coverage.xml \
+            --cov-report=term-missing \
+            --cov-fail-under=80 \
+            -v
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: reports/coverage.xml
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  STAGE 5 — CONTAINER SCANNING (Trivy + Hadolint)
+#  Scans Docker image layers for OS-level CVEs
+# ═══════════════════════════════════════════════════════════════════════════════
+  container-scan:
+    name: "🐳 Stage 5 — Container Scanning (Trivy + Hadolint)"
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # Lint the Dockerfile itself for security bad practices
+      - name: Hadolint — Dockerfile security lint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: app/Dockerfile
+          failure-threshold: warning
+          format: sarif
+          output-file: hadolint.sarif
+
+      - name: Upload Hadolint SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: hadolint.sarif
+          category: hadolint
+
+      # Build the Docker image
+      - name: Build Docker image
+        run: |
+          docker build \
+            --tag ${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            --tag ${{ env.IMAGE_NAME }}:latest \
+            app/
+
+      # Trivy: scan the built image for OS + library CVEs
+      - name: Trivy — Container image vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          format: "sarif"
+          output: "trivy-results.sarif"
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"          # fail pipeline on CRITICAL or HIGH CVEs
+          ignore-unfixed: true    # skip CVEs with no available fix yet
+
+      - name: Upload Trivy SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy
+
+      # Save image for DAST stage
+      - name: Save Docker image as artifact
+        run: docker save ${{ env.IMAGE_NAME }}:latest | gzip > image.tar.gz
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: image.tar.gz
+          retention-days: 1       # only needed for the next job
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  STAGE 6 — DAST (OWASP ZAP)
+#  Starts the real app in staging and attacks it like a real hacker would
+# ═══════════════════════════════════════════════════════════════════════════════
+  dast-zap:
+    name: "⚡ Stage 6 — DAST (OWASP ZAP)"
+    runs-on: ubuntu-latest
+    needs: container-scan
+    steps:
+      - uses: actions/checkout@v4
+
+      # Load the Docker image built in the previous stage
+      - name: Load Docker image
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+
+      - name: Import Docker image
+        run: docker load < image.tar.gz
+
+      # Start the app in a container (this is your "staging environment")
+      - name: Start staging environment
+        run: |
+          docker run -d \
+            --name staging-app \
+            -p 5000:5000 \
+            -e FLASK_SECRET_KEY=${{ secrets.FLASK_SECRET_KEY }} \
+            ${{ env.IMAGE_NAME }}:latest
+
+          # Wait until the app is healthy
+          echo "Waiting for app to become healthy..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:5000/health > /dev/null; then
+              echo "App is healthy after ${i}s"
+              break
+            fi
+            sleep 2
+          done
+
+      # OWASP ZAP: full active scan — tries every OWASP Top 10 attack category
+      - name: OWASP ZAP — Full active scan
+        uses: zaproxy/action-full-scan@v0.10.0
+        with:
+          target: "http://localhost:5000"
+          rules_file_name: ".zap-rules.tsv"
+          cmd_options: "-a"           # include all scanners
+          allow_issue_writing: false  # don't open GitHub Issues (we handle reporting)
+          fail_action: true           # fail pipeline on HIGH or CRITICAL findings
+
+      # ZAP generates reports automatically in the workspace root
+      - name: Upload ZAP reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-report
+          path: |
+            report_html.html
+            report_json.json
+            report_md.md
+
+      - name: Stop staging container
+        if: always()
+        run: docker stop staging-app && docker rm staging-app
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  STAGE 7 — SECURITY SUMMARY REPORT
+#  Aggregates all findings into one dashboard comment on the PR
+# ═══════════════════════════════════════════════════════════════════════════════
+  security-summary:
+    name: "📊 Stage 7 — Security Summary Report"
+    runs-on: ubuntu-latest
+    needs: [secret-scan, sast-semgrep, dependency-scan, unit-tests, container-scan, dast-zap]
+    if: always()    # always generate the summary, even if stages failed
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all reports
+        uses: actions/download-artifact@v4
+        with:
+          path: all-reports/
+
+      - name: Generate summary report
+        run: |
+          python scripts/generate_report.py \
+            --reports-dir all-reports/ \
+            --output reports/security-summary.md \
+            --sha "${{ github.sha }}" \
+            --run-id "${{ github.run_id }}"
+
+      - name: Post summary to GitHub Step Summary
+        run: cat reports/security-summary.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Comment summary on PR
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          recreate: true
+          path: reports/security-summary.md
+
+      - name: Upload final summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-summary
+          path: reports/security-summary.md
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  STAGE 8 — DEPLOY (only on main, only if all security stages passed)
+# ═══════════════════════════════════════════════════════════════════════════════
+  deploy:
+    name: "🚀 Stage 8 — Deploy to Production"
+    runs-on: ubuntu-latest
+    needs: [dast-zap, security-summary]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Load Docker image
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+
+      - name: Import Docker image
+        run: docker load < image.tar.gz
+
+      # Deploy to Render (free tier) using their deploy hook
+      # Set RENDER_DEPLOY_HOOK_URL in your repo secrets
+      - name: Deploy to Render
+        id: deploy
+        run: |
+          RESPONSE=$(curl -sf -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}")
+          echo "Deploy triggered: $RESPONSE"
+          echo "url=${{ secrets.RENDER_APP_URL }}" >> $GITHUB_OUTPUT
+
+      - name: Verify deployment health
+        run: |
+          echo "Waiting for production deployment..."
+          sleep 60
+          curl -sf "${{ secrets.RENDER_APP_URL }}/health" \
+            || (echo "::error::Production health check failed!" && exit 1)
+          echo "Production deployment is healthy!"

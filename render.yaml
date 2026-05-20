@@ -1,0 +1,22 @@
+# render.yaml — Free deployment on Render.com
+# Connect your GitHub repo at https://dashboard.render.com/new/web
+services:
+  - type: web
+    name: devsecops-demo
+    runtime: docker
+    dockerfilePath: ./app/Dockerfile
+    dockerContext: ./app
+    plan: free                # Render free tier — no credit card needed
+    region: oregon
+
+    # Health check — Render uses this to know the app is ready
+    healthCheckPath: /health
+
+    # Environment variables — set FLASK_SECRET_KEY in Render dashboard
+    envVars:
+      - key: PORT
+        value: "5000"
+      - key: DB_PATH
+        value: "/tmp/devsecops.db"
+      - key: FLASK_SECRET_KEY
+        sync: false           # Render will prompt you to set this manually
