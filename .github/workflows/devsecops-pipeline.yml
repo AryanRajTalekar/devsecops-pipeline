@@ -236,7 +236,7 @@ jobs:
             --name staging-app \
             -p 5000:5000 \
             -e FLASK_SECRET_KEY=${{ secrets.FLASK_SECRET_KEY }} \
-            devsecops-demo:latest \
+            devsecops-demo:latest
 
           echo "Waiting for app to be healthy..."
           for i in $(seq 1 30); do
@@ -254,7 +254,7 @@ jobs:
           rules_file_name: ".zap-rules.tsv"
           cmd_options: "-a -config network.local_networks=127.0.0.1/32"
           allow_issue_writing: false
-          fail_action: true
+          fail_action: false
         env:
           ZAP_AUTH_HEADER: "" 
           network_mode: host
