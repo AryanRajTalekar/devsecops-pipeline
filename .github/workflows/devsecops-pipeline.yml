@@ -97,9 +97,13 @@ jobs:
         with:
           project: "devsecops-demo"
           path: "."
-          format: "HTML,JSON"
+          # Passing formats on separate lines satisfies the action wrapper parser
+          format: |
+            HTML
+            JSON
           out: "reports/dependency-check"
           args: >
+            --noupdate
             --enableRetired
             --failOnCVSS 7
             --suppression dependency-check-suppressions.xml
@@ -115,6 +119,8 @@ jobs:
         with:
           name: pip-audit-results
           path: pip-audit-results.json
+
+          
 
 # ── Stage 4: Unit + Security Tests ────────────────────────────────────────────
   unit-tests:
