@@ -8,11 +8,11 @@ import logging
 import secrets
 from datetime import datetime, timezone
 
-def utcnow():
-    return datetime.now(timezone.utc).isoformat()
-
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(32))
+
+def utcnow():
+    return datetime.now(timezone.utc).isoformat()
 
 # ── Rate limiting ──────────────────────────────────────────────────────────────
 limiter = Limiter(
@@ -63,7 +63,6 @@ def init_db():
 
 # ── Input sanitization ─────────────────────────────────────────────────────────
 def sanitize_search(query: str) -> str:
-    """Strip any character that is not alphanumeric, space, or hyphen."""
     return re.sub(r"[^\w\s\-]", "", query)[:100]
 
 def log_audit(action: str, detail: str = ""):
@@ -147,7 +146,7 @@ def create_product():
     log_audit("PRODUCT_CREATE", f"id={new_id} name={name}")
     return jsonify({"id": new_id, "name": name, "price": price, "category": category}), 201
 
-# ── Error handlers (never leak internals) ──────────────────────────────────────
+# ── Error handlers ─────────────────────────────────────────────────────────────
 @app.errorhandler(404)
 def not_found(_):
     return jsonify({"error": "not found"}), 404
@@ -158,9 +157,12 @@ def rate_limited(_):
 
 @app.errorhandler(500)
 def server_error(_):
-    logger.exception("Internal server error")          # stack trace goes to LOGS only
-    return jsonify({"error": "internal server error"}), 500   # client gets nothing useful
+    logger.exception("Internal server error")
+    return jsonify({"error": "internal server error"}), 500
+
+# Initialise DB at import time — runs under both `python app.py` AND gunicorn
+with app.app_context():
+    init_db()
 
 if __name__ == "__main__":
-    init_db()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

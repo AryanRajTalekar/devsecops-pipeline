@@ -1,28 +1,23 @@
 repos:
-  # ── Secret scanning (Gitleaks) ──────────────────────────────────────────────
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.18.4
     hooks:
       - id: gitleaks
-        name: "🔐 Secret scan (Gitleaks)"
-        description: "Block commits containing secrets, API keys, or tokens"
+        name: "Secret scan (Gitleaks)"
 
-  # ── Python linting + security ───────────────────────────────────────────────
   - repo: https://github.com/pycqa/flake8
     rev: 7.0.0
     hooks:
       - id: flake8
-        name: "🐍 Python lint (flake8)"
-        args: ["--max-line-length=100", "--ignore=E501"]
+        name: "Python lint (flake8)"
+        args: ["--max-line-length=100"]
 
-  # ── Dockerfile linting ──────────────────────────────────────────────────────
   - repo: https://github.com/hadolint/hadolint
     rev: v2.12.0
     hooks:
       - id: hadolint-docker
-        name: "🐳 Dockerfile lint (Hadolint)"
+        name: "Dockerfile lint (Hadolint)"
 
-  # ── General file hygiene ────────────────────────────────────────────────────
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
     hooks:
@@ -32,4 +27,4 @@ repos:
       - id: check-json
       - id: check-merge-conflict
       - id: detect-private-key
-        name: "🔑 Detect private keys"
+        name: "Detect private keys"

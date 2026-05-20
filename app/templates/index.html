@@ -17,9 +17,7 @@
       padding: 3px 10px; border-radius: 20px; font-weight: 600;
     }
     main { max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
-    .search-bar {
-      display: flex; gap: 8px; margin-bottom: 1.5rem;
-    }
+    .search-bar { display: flex; gap: 8px; margin-bottom: 1.5rem; }
     .search-bar input {
       flex: 1; padding: 10px 14px; border: 1px solid #ddd;
       border-radius: 8px; font-size: 15px;
@@ -46,7 +44,8 @@
       border-left: 4px solid #00b894; font-size: 13px; color: #555;
     }
     footer {
-      text-align: center; padding: 2rem; color: #aaa; font-size: 12px; margin-top: 3rem;
+      text-align: center; padding: 2rem; color: #aaa;
+      font-size: 12px; margin-top: 3rem;
     }
   </style>
 </head>
@@ -65,7 +64,10 @@
     <div class="status" id="status"></div>
   </main>
 
-  <footer>Built with a fully automated DevSecOps pipeline — TruffleHog · Semgrep · OWASP Dependency-Check · Trivy · OWASP ZAP</footer>
+  <footer>
+    Built with a fully automated DevSecOps pipeline —
+    TruffleHog · Semgrep · OWASP Dependency-Check · Trivy · OWASP ZAP
+  </footer>
 
   <script>
     async function search() {
@@ -88,7 +90,7 @@
     function esc(s) {
       return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
-    search();   // load all on page open
+    search();
   </script>
 </body>
 </html>

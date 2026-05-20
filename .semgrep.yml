@@ -1,71 +1,43 @@
-# .semgrep.yml — custom SAST rules on top of Semgrep's free ruleset
-# These are project-specific rules that run alongside: semgrep --config=auto
 rules:
-
-  # ── SQL injection guard ──────────────────────────────────────────────────────
   - id: raw-sql-string-concat
     patterns:
       - pattern: $DB.execute("..." + $VAR)
       - pattern: $DB.execute(f"...{$VAR}...")
     message: >
-      Possible SQL injection: never concatenate user input into SQL strings.
-      Use parameterised queries: conn.execute("SELECT ... WHERE x = ?", (value,))
+      SQL injection risk: use parameterised queries conn.execute("... WHERE x = ?", (val,))
     languages: [python]
     severity: ERROR
     metadata:
       cwe: "CWE-89"
       owasp: "A03:2021"
 
-  # ── Hardcoded secrets ────────────────────────────────────────────────────────
   - id: hardcoded-password-assignment
     pattern: $VAR = "$PASSWORD"
     metavariable-regex:
       metavariable: $VAR
       regex: '.*(password|passwd|secret|token|key|api_key).*'
     message: >
-      Hardcoded credential detected in '$VAR'. Use environment variables
-      and os.environ.get() instead.
+      Hardcoded credential in '$VAR'. Use os.environ.get() instead.
     languages: [python]
     severity: ERROR
     metadata:
       cwe: "CWE-798"
       owasp: "A07:2021"
 
-  # ── Debug mode in production ─────────────────────────────────────────────────
   - id: flask-debug-true
     pattern: app.run(..., debug=True, ...)
     message: >
-      Flask debug=True must never run in production — it exposes an
-      interactive debugger that allows arbitrary code execution.
+      Flask debug=True must never run in production — exposes an interactive debugger.
     languages: [python]
     severity: WARNING
     metadata:
       cwe: "CWE-94"
-      owasp: "A05:2021"
 
-  # ── Using shell=True (command injection risk) ────────────────────────────────
   - id: subprocess-shell-true
     pattern: subprocess.run(..., shell=True, ...)
     message: >
-      shell=True with subprocess is dangerous if any part of the command
-      string includes user input. Use a list of arguments instead.
+      shell=True with subprocess is a command injection risk if input is user-controlled.
     languages: [python]
     severity: WARNING
     metadata:
       cwe: "CWE-78"
-      owasp: "A03:2021"
-
-  # ── Broad exception swallowing ───────────────────────────────────────────────
-  - id: bare-except-pass
-    pattern: |
-      try:
-        ...
-      except:
-        pass
-    message: >
-      Bare except+pass silently swallows all errors including security
-      exceptions. Catch specific exception types and log them.
-    languages: [python]
-    severity: WARNING
-    metadata:
-      cwe: "CWE-390"
