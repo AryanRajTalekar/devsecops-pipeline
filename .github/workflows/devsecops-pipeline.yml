@@ -174,7 +174,8 @@ jobs:
           format: sarif
           output-file: hadolint.sarif
 
-      - uses: github/codeql-action/upload-sarif@v3
+      - name: Upload Hadolint scan results
+        uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: hadolint.sarif
@@ -182,38 +183,30 @@ jobs:
 
       - name: Build Docker image
         run: |
-          # Fallback to devsecops-demo if env.IMAGE_NAME isn't globally set
-          IMAGE=${{ env.IMAGE_NAME }}
-          if [ -z "$IMAGE" ]; then IMAGE="devsecops-demo"; fi
-          
           docker build \
-            --tag "$IMAGE:${{ github.sha }}" \
-            --tag "$IMAGE:latest" \
+            --tag "devsecops-demo:${{ github.sha }}" \
+            --tag "devsecops-demo:latest" \
             app/
 
       - name: Trivy — image scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.20.0 # <-- Switched from @master to a stable version tag
         with:
-          image-ref: "${{ env.IMAGE_NAME || 'devsecops-demo' }}:${{ github.sha }}"
+          image-ref: "devsecops-demo:${{ github.sha }}"
           format: "sarif"
           output: "trivy-results.sarif"
           severity: "CRITICAL,HIGH"
-          # Temporarily change exit-code to '0' so it successfully writes the report file 
-          # instead of hard-crashing mid-run.
-          exit-code: "0" 
+          exit-code: "0"
           ignore-unfixed: true
 
-      - uses: github/codeql-action/upload-sarif@v3
-        if: always()
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: hashFiles('trivy-results.sarif') != '' # <-- Only runs if the file actually exists!
         with:
           sarif_file: trivy-results.sarif
           category: trivy
 
       - name: Save image artifact
-        run: |
-          IMAGE=${{ env.IMAGE_NAME }}
-          if [ -z "$IMAGE" ]; then IMAGE="devsecops-demo"; fi
-          docker save "$IMAGE:latest" | gzip > image.tar.gz
+        run: docker save "devsecops-demo:latest" | gzip > image.tar.gz
 
       - uses: actions/upload-artifact@v4
         with:
