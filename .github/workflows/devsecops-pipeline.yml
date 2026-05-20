@@ -33,7 +33,7 @@ jobs:
           path: ./
           base: ${{ github.event.repository.default_branch }}
           head: HEAD
-          extra_args: --only-verified --fail
+          extra_args: --only-verified # <-- Removed --fail from here since the action injects it automatically
 
 # ── Stage 2: SAST ─────────────────────────────────────────────────────────────
   sast-semgrep:
