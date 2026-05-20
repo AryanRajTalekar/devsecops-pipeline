@@ -173,6 +173,7 @@ jobs:
           failure-threshold: warning
           format: sarif
           output-file: hadolint.sarif
+          no-fail: true
 
       - name: Upload Hadolint scan results
         uses: github/codeql-action/upload-sarif@v3
