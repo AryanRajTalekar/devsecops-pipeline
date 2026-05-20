@@ -252,9 +252,12 @@ jobs:
         with:
           target: "http://localhost:5000"
           rules_file_name: ".zap-rules.tsv"
-          cmd_options: "-a"
+          cmd_options: "-a -config network.local_networks=127.0.0.1/32"
           allow_issue_writing: false
           fail_action: true
+        env:
+          ZAP_AUTH_HEADER: "" 
+          network_mode: host
 
       - uses: actions/upload-artifact@v4
         if: always()
