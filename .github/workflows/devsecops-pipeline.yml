@@ -256,9 +256,11 @@ jobs:
       - name: OWASP ZAP full scan
         uses: zaproxy/action-full-scan@v0.10.0
         with:
-          target: "http://localhost:5000"
+          # Switching from 'localhost' to '127.0.0.1' forces python to skip DNS lookup logic
+          target: "http://127.0.0.1:5000"
           rules_file_name: ".zap-rules.tsv"
-          cmd_options: "-a"
+          # Overriding the target inside cmd_options ensures the ZAP engine forces connection traffic safely
+          cmd_options: "-a -target http://127.0.0.1:5000"
           allow_issue_writing: false
           fail_action: false
           artifact_name: "zap-scan-results"
