@@ -233,9 +233,9 @@ jobs:
         run: |
           docker run -d \
             --name staging-app \
-            -p 5000:5000 \
+            --network host \
             -e FLASK_SECRET_KEY=${{ secrets.FLASK_SECRET_KEY }} \
-            devsecops-demo:latest
+            devsecops-demo-app:latest
 
           echo "Waiting for app to be healthy..."
           for i in $(seq 1 30); do
@@ -251,17 +251,15 @@ jobs:
         with:
           target: "http://localhost:5000"
           rules_file_name: ".zap-rules.tsv"
-          cmd_options: "-a -config network.local_networks=127.0.0.1/32"
+          cmd_options: "-a"
           allow_issue_writing: false
           fail_action: false
-        env:
-          ZAP_AUTH_HEADER: "" 
-          network_mode: host
+          artifact_name: "zap-scan-results"
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: zap-report
+          name: zap-full-report
           path: |
             report_html.html
             report_json.json
