@@ -227,15 +227,22 @@ jobs:
           name: docker-image
 
       - name: Load image
-        run: docker load < image.tar.gz
+        run: |
+          docker load < image.tar.gz
+          echo "Images available after load:"
+          docker images
 
       - name: Start staging environment
         run: |
+          # Get the exact image name that was loaded
+          IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -v "^<none>" | head -n 1)
+          echo "Using image: $IMAGE"
+
           docker run -d \
             --name staging-app \
             --network host \
             -e FLASK_SECRET_KEY=${{ secrets.FLASK_SECRET_KEY }} \
-            devsecops-demo-app:latest
+            $IMAGE
 
           echo "Waiting for app to be healthy..."
           for i in $(seq 1 30); do
@@ -267,7 +274,9 @@ jobs:
 
       - name: Stop staging container
         if: always()
-        run: docker stop staging-app && docker rm staging-app
+        run: |
+          docker stop staging-app 2>/dev/null || true
+          docker rm staging-app 2>/dev/null || true
 
 # ── Stage 7: Security Summary ──────────────────────────────────────────────────
   security-summary:
