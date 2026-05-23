@@ -222,32 +222,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/download-artifact@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          name: docker-image
+          python-version: "3.12"
 
-      - name: Load image
+      - name: Install app dependencies
+        run: pip install -r app/requirements.txt
+
+      - name: Start app directly on runner
         run: |
-          docker load < image.tar.gz
-          echo "Images available after load:"
-          docker images
-
-      - name: Start staging environment
-        run: |
-          IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -v "^<none>" | head -n 1)
-          echo "Using image: $IMAGE"
-
-          docker run -d \
-            --name staging-app \
-            --network host \
-            -e FLASK_SECRET_KEY=${{ secrets.FLASK_SECRET_KEY }} \
-            $IMAGE
+          cd app
+          FLASK_SECRET_KEY=stagingsecret123 \
+          DB_PATH=/tmp/zap-test.db \
+          gunicorn --bind 0.0.0.0:5000 --workers 1 --timeout 60 --daemon \
+            --log-file /tmp/gunicorn.log \
+            app:app
 
           echo "Waiting for app to be healthy..."
           for i in $(seq 1 30); do
             if curl -sf http://127.0.0.1:5000/health > /dev/null; then
-              echo "Healthy after ${i}s"
+              echo "App is healthy after ${i}s"
               break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "App never became healthy. Gunicorn logs:"
+              cat /tmp/gunicorn.log
+              exit 1
             fi
             sleep 2
           done
@@ -271,11 +272,9 @@ jobs:
             report_json.json
             report_md.md
 
-      - name: Stop staging container
+      - name: Stop app
         if: always()
-        run: |
-          docker stop staging-app 2>/dev/null || true
-          docker rm staging-app 2>/dev/null || true
+        run: pkill gunicorn 2>/dev/null || true
 
 # ── Stage 7: Security Summary ──────────────────────────────────────────────────
   security-summary:
