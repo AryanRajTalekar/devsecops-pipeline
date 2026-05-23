@@ -234,7 +234,6 @@ jobs:
 
       - name: Start staging environment
         run: |
-          # Get the exact image name that was loaded
           IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -v "^<none>" | head -n 1)
           echo "Using image: $IMAGE"
 
@@ -246,7 +245,7 @@ jobs:
 
           echo "Waiting for app to be healthy..."
           for i in $(seq 1 30); do
-            if curl -sf http://localhost:5000/health > /dev/null; then
+            if curl -sf http://127.0.0.1:5000/health > /dev/null; then
               echo "Healthy after ${i}s"
               break
             fi
@@ -256,11 +255,9 @@ jobs:
       - name: OWASP ZAP full scan
         uses: zaproxy/action-full-scan@v0.10.0
         with:
-          # Switching from 'localhost' to '127.0.0.1' forces python to skip DNS lookup logic
           target: "http://127.0.0.1:5000"
           rules_file_name: ".zap-rules.tsv"
-          # Overriding the target inside cmd_options ensures the ZAP engine forces connection traffic safely
-          cmd_options: "-a -target http://127.0.0.1:5000"
+          cmd_options: "-a"
           allow_issue_writing: false
           fail_action: false
           artifact_name: "zap-scan-results"
